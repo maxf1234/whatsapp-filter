@@ -25,9 +25,21 @@ export type FilterDecision =
   | "unresolved_jid"
   | "error";
 
+export type DefaultPolicy = "allow" | "block";
+
 export interface AccountSettings {
   action: FilterAction;
   armed: boolean;
+  /**
+   * What happens to a number no rule matched.
+   *
+   * 'allow' is a blocklist: rules name what to stop and everything else passes.
+   * 'block' is an allowlist: rules name what may through and everything else is
+   * caught. The second is the only way to say "everything except these", because
+   * a blocklist enumerating every country is wrong the moment a prefix nobody
+   * thought of arrives — which is the whole case an allowlist exists for.
+   */
+  defaultPolicy: DefaultPolicy;
   deleteDelaySeconds: number;
   applyToKnownContacts: boolean;
   applyToGroups: boolean;
@@ -87,6 +99,12 @@ export function decide(
     // A LID is a real identity we simply cannot read a country code from. It is
     // recorded rather than treated as a miss, so "the filter never fires on this
     // contact" shows up in the activity log instead of looking like a quiet pass.
+    //
+    // Note this is a hole in allowlist mode, and a deliberate one: under
+    // default-deny the strict reading is "not provably allowed, so catch it",
+    // but that would mean deleting conversations we cannot identify and the
+    // subscriber has no way to write a rule for. Logging is the lesser wrong,
+    // and `unresolved_jid` in the activity log is how they find out.
     return verdict("unresolved_jid", isGroup, { detail: isLidJid(subjectJid) ? "lid" : "unparsable" });
   }
 
@@ -97,19 +115,39 @@ export function decide(
   }
 
   const match = matchPrefix(phone, rules);
-  if (!match) return verdict("no_match", isGroup, { phone });
 
-  const matched = { phone, matchedPrefix: match.prefix, matchedRuleId: match.rule.id };
+  // An allow rule wins outright under either policy. Under 'block' it is the
+  // allowlist entry; under 'allow' it is the exception carved out of a longer
+  // block rule. Same rule, same meaning, no second concept.
+  if (match?.rule.kind === "allow") {
+    return verdict("allowed", isGroup, {
+      phone,
+      matchedPrefix: match.prefix,
+      matchedRuleId: match.rule.id,
+    });
+  }
 
-  if (match.rule.kind === "allow") return verdict("allowed", isGroup, matched);
+  const matched = match
+    ? { phone, matchedPrefix: match.prefix, matchedRuleId: match.rule.id }
+    : { phone };
 
-  // Matched a block rule. Whether anything happens is a separate question, and
-  // this is the only place that answers it: an account that is not armed records
-  // what it would have done and stops. It is what makes it safe to hand someone
-  // an irreversible action as the default — they can watch it be right for a day
-  // before it can touch anything.
+  if (!match && settings.defaultPolicy === "allow") {
+    return verdict("no_match", isGroup, matched);
+  }
+
+  // Either a block rule matched, or nothing matched and the account is running
+  // as an allowlist. Both are caught; only the reason recorded differs, and it
+  // is worth recording — "no rule matched, and this account blocks by default"
+  // is a very different thing to explain to a subscriber than "you blocked +234".
+  const detail = match ? undefined : "no rule matched; default policy is block";
+
+  // Whether anything happens is a separate question, and this is the only place
+  // that answers it: an account that is not armed records what it would have
+  // done and stops. It is what makes it safe to hand someone an irreversible
+  // action as the default — they can watch it be right for a day before it can
+  // touch anything.
   if (!settings.armed || settings.action === "log_only") {
-    return verdict("would_block", isGroup, matched);
+    return verdict("would_block", isGroup, { ...matched, detail });
   }
 
   return {
@@ -118,6 +156,7 @@ export function decide(
     // Deletes are held; archiving is reversible and not worth delaying.
     delaySeconds: settings.action === "archive" ? 0 : settings.deleteDelaySeconds,
     isGroup,
+    detail,
     ...matched,
   };
 }
@@ -134,8 +173,17 @@ export function decideCall(
 ): { reject: boolean; phone?: string; matchedPrefix?: string; matchedRuleId?: string } {
   if (!settings.rejectCalls) return { reject: false };
   const phone = phoneFromJid(callerJid);
+  // A caller we cannot read a number from is never rejected, even under an
+  // allowlist. Declining every unreadable call would mean declining calls the
+  // subscriber has no way to allow.
   if (!phone) return { reject: false };
   const match = matchPrefix(phone, rules);
-  if (!match || match.rule.kind === "allow") return { reject: false, phone };
-  return { reject: true, phone, matchedPrefix: match.prefix, matchedRuleId: match.rule.id };
+  if (match?.rule.kind === "allow") return { reject: false, phone };
+  if (!match && settings.defaultPolicy === "allow") return { reject: false, phone };
+  return {
+    reject: true,
+    phone,
+    matchedPrefix: match?.prefix,
+    matchedRuleId: match?.rule.id,
+  };
 }

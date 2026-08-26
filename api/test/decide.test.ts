@@ -12,6 +12,7 @@ const RULES = [NIGERIA, INDIA, FRIEND];
 const settings = (patch: Partial<AccountSettings> = {}): AccountSettings => ({
   action: "delete",
   armed: true,
+  defaultPolicy: "allow",
   deleteDelaySeconds: 120,
   applyToKnownContacts: false,
   applyToGroups: false,
@@ -158,5 +159,90 @@ describe("calls", () => {
 
   test("call rejection does not need the account armed, because it destroys nothing", () => {
     assert.ok(decideCall(NG, RULES, settings({ armed: false })).reject);
+  });
+});
+
+describe("allowlist mode (default_policy = block)", () => {
+  // "Block everything except South Africa" — one allow rule, and the policy.
+  const ONLY_ZA: PrefixRule[] = [{ id: "r-za", kind: "allow", prefix: "27" }];
+  const allowlist = (patch: Partial<AccountSettings> = {}) =>
+    settings({ defaultPolicy: "block", ...patch });
+
+  const ZA = "27825550143@s.whatsapp.net";
+
+  test("the one allowed country gets through", () => {
+    const verdict = decide(from(ZA), ONLY_ZA, allowlist());
+    assert.equal(verdict.decision, "allowed");
+    assert.equal(verdict.matchedPrefix, "27");
+  });
+
+  test("everything else is caught, including numbers no rule mentions", () => {
+    for (const number of [NG, US, "919876543210@s.whatsapp.net", "4915555550123@s.whatsapp.net"]) {
+      const verdict = decide(from(number), ONLY_ZA, allowlist());
+      assert.equal(verdict.decision, "blocked", `${number} should be caught`);
+      assert.equal(verdict.action, "delete");
+    }
+  });
+
+  test("a caught number with no rule says why, so the log is explicable", () => {
+    const verdict = decide(from(US), ONLY_ZA, allowlist());
+    assert.equal(verdict.matchedPrefix, undefined);
+    assert.equal(verdict.detail, "no rule matched; default policy is block");
+  });
+
+  test("the arming gate still holds — an allowlist account touches nothing until armed", () => {
+    for (const action of ["log_only", "archive", "delete", "block_and_delete"] as const) {
+      const verdict = decide(from(US), ONLY_ZA, allowlist({ armed: false, action }));
+      assert.equal(verdict.decision, "would_block");
+      assert.equal(verdict.action, "log_only");
+    }
+  });
+
+  test("saved contacts still pass, which is the safety valve that makes this survivable", () => {
+    const verdict = decide(from(US, { isKnownContact: true }), ONLY_ZA, allowlist());
+    assert.equal(verdict.decision, "skipped_known");
+  });
+
+  test("your own messages are still never touched", () => {
+    assert.equal(decide(from(US, { fromMe: true }), ONLY_ZA, allowlist()).decision, "skipped_self");
+  });
+
+  test("groups are still opt-in", () => {
+    const group = from("120363000000000000@g.us", { participantJid: US });
+    assert.equal(decide(group, ONLY_ZA, allowlist()).decision, "skipped_group");
+    assert.equal(decide(group, ONLY_ZA, allowlist({ applyToGroups: true })).decision, "blocked");
+  });
+
+  test("a block rule inside an allowed country still wins by being longer", () => {
+    const rules: PrefixRule[] = [...ONLY_ZA, { id: "r-za-spam", kind: "block", prefix: "27860" }];
+    assert.equal(decide(from(ZA), rules, allowlist()).decision, "allowed");
+    assert.equal(
+      decide(from("27860555012@s.whatsapp.net"), rules, allowlist()).decision,
+      "blocked",
+    );
+  });
+
+  test("an allowlist with no allow rules catches everything, which is what it says", () => {
+    assert.equal(decide(from(ZA), [], allowlist()).decision, "blocked");
+  });
+
+  test("switching the policy back to allow restores blocklist behaviour exactly", () => {
+    assert.equal(decide(from(US), ONLY_ZA, settings()).decision, "no_match");
+  });
+
+  test("calls follow the same policy", () => {
+    assert.equal(decideCall(ZA, ONLY_ZA, allowlist()).reject, false);
+    assert.ok(decideCall(US, ONLY_ZA, allowlist()).reject);
+    assert.equal(decideCall(US, ONLY_ZA, settings()).reject, false, "blocklist mode lets it ring");
+  });
+
+  test("an unreadable caller is never rejected, since there is no way to allow one", () => {
+    assert.equal(decideCall("98765432101234@lid", ONLY_ZA, allowlist()).reject, false);
+  });
+
+  test("a LID message is still logged rather than caught by the default", () => {
+    const verdict = decide(from("98765432101234@lid"), ONLY_ZA, allowlist());
+    assert.equal(verdict.decision, "unresolved_jid");
+    assert.equal(verdict.action, "log_only");
   });
 });

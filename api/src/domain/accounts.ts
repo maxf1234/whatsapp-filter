@@ -16,6 +16,7 @@ export interface SettingsRow {
   account_id: string;
   action: AccountSettings["action"];
   armed: boolean;
+  default_policy: AccountSettings["defaultPolicy"];
   armed_at: string | null;
   delete_delay_seconds: number;
   apply_to_known_contacts: boolean;
@@ -59,6 +60,7 @@ export async function signUp(email: string): Promise<AccountRow> {
     if (!account) throw conflict("could not create account");
 
     await q.query(`insert into account_settings (account_id) values ($1)`, [account.id]);
+    await seedStarterRules(q, account.id);
     const member = await one<AccountRow>(
       q,
       `insert into account_members (account_id, user_id, role) values ($1, $2, 'owner')
@@ -69,6 +71,29 @@ export async function signUp(email: string): Promise<AccountRow> {
     if (!member) throw conflict("could not create membership");
     return member;
   });
+}
+
+/**
+ * Copy the starter block list onto a new account.
+ *
+ * A copy rather than a reference, because the moment a subscriber deletes one of
+ * these it has to stay deleted — a shared list would resurrect it, and a filter
+ * that puts back a rule you removed is worse than one that shipped empty.
+ *
+ * Labels come from the dial plan at copy time, so a rule reads as "Nigeria"
+ * rather than as digits a month later.
+ */
+export async function seedStarterRules(q: Querier, accountId: string): Promise<number> {
+  const result = await q.query(
+    `insert into rules (account_id, kind, prefix, label)
+     select $1, s.kind, s.prefix, d.name
+       from starter_rules s
+       left join dial_prefixes d on d.prefix = s.prefix
+      order by s.sort_order, s.prefix
+     on conflict (account_id, prefix) do nothing`,
+    [accountId],
+  );
+  return result.rowCount ?? 0;
 }
 
 /** The account a logged-in user acts on. RLS already limits this to their own. */
@@ -92,7 +117,7 @@ export async function accountForUser(userId: string): Promise<AccountRow> {
 export async function getSettings(q: Querier, accountId: string): Promise<SettingsRow> {
   const row = await one<SettingsRow>(
     q,
-    `select account_id, action, armed, armed_at, delete_delay_seconds,
+    `select account_id, action, armed, armed_at, default_policy, delete_delay_seconds,
             apply_to_known_contacts, apply_to_groups, reject_calls
        from account_settings where account_id = $1`,
     [accountId],
@@ -105,6 +130,7 @@ export function toSettings(row: SettingsRow): AccountSettings {
   return {
     action: row.action,
     armed: row.armed,
+    defaultPolicy: row.default_policy,
     deleteDelaySeconds: row.delete_delay_seconds,
     applyToKnownContacts: row.apply_to_known_contacts,
     applyToGroups: row.apply_to_groups,
@@ -115,6 +141,7 @@ export function toSettings(row: SettingsRow): AccountSettings {
 export interface SettingsPatch {
   action?: AccountSettings["action"];
   armed?: boolean;
+  defaultPolicy?: AccountSettings["defaultPolicy"];
   deleteDelaySeconds?: number;
   applyToKnownContacts?: boolean;
   applyToGroups?: boolean;
@@ -146,9 +173,10 @@ export async function updateSettings(
         apply_to_known_contacts = coalesce($5, apply_to_known_contacts),
         apply_to_groups         = coalesce($6, apply_to_groups),
         reject_calls            = coalesce($7, reject_calls),
+        default_policy          = coalesce($8, default_policy),
         updated_at              = now()
       where account_id = $1
-      returning account_id, action, armed, armed_at, delete_delay_seconds,
+      returning account_id, action, armed, armed_at, default_policy, delete_delay_seconds,
                 apply_to_known_contacts, apply_to_groups, reject_calls`,
     [
       accountId,
@@ -158,6 +186,7 @@ export async function updateSettings(
       patch.applyToKnownContacts ?? null,
       patch.applyToGroups ?? null,
       patch.rejectCalls ?? null,
+      patch.defaultPolicy ?? null,
     ],
   );
   if (!row) throw notFound("settings not found");

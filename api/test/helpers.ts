@@ -42,6 +42,17 @@ export async function createSubject(email?: string): Promise<Subject> {
   };
 }
 
+/**
+ * Drop the starter block list from an account.
+ *
+ * Signup seeds 29 rules, which is right for the product and in the way of any
+ * test asserting "this account has exactly the rules I gave it". Tests that care
+ * about the starter list say so; the rest start from empty on purpose.
+ */
+export async function clearRules(accountId: string): Promise<void> {
+  await asService((q) => q.query(`delete from rules where account_id = $1`, [accountId]));
+}
+
 /** A session row in whatever state a test needs, without going near a socket. */
 export async function linkSession(
   accountId: string,

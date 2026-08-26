@@ -3,7 +3,10 @@
 import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { asService, many, one } from "../src/lib/db.ts";
-import { authHeader, buildTestApp, closeAll, createSubject, linkSession, resetDatabase } from "./helpers.ts";
+import { authHeader, buildTestApp, clearRules, closeAll, createSubject, linkSession, resetDatabase } from "./helpers.ts";
+import { activeRules } from "../src/domain/rules.ts";
+import { getSettings, toSettings } from "../src/domain/accounts.ts";
+import { decide } from "../src/domain/decide.ts";
 import type { Subject } from "./helpers.ts";
 
 type App = Awaited<ReturnType<typeof buildTestApp>>;
@@ -29,6 +32,9 @@ after(async () => {
 
 const json = (response: { body: string }) => JSON.parse(response.body);
 
+/** Every new account is seeded with these; see db/migrations/0006_starter_rules.sql. */
+const STARTER_RULES = 29;
+
 describe("signup", () => {
   test("creates an account, settings and a usable token in one call", async () => {
     const response = await app.inject({
@@ -50,6 +56,7 @@ describe("signup", () => {
     const state = json(me);
     assert.equal(state.settings.armed, false, "an account is born disarmed");
     assert.equal(state.settings.action, "delete");
+    assert.equal(state.settings.default_policy, "allow", "and as a block list, not an allow list");
     assert.equal(state.session, null);
   });
 
@@ -73,7 +80,73 @@ describe("signup", () => {
   });
 });
 
+describe("the starter block list", () => {
+  test("a new account arrives with the list already loaded and labelled", async () => {
+    const listed = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
+    assert.equal(listed.rules.length, 29);
+    assert.ok(listed.rules.every((r: { kind: string }) => r.kind === "block"));
+    assert.ok(listed.rules.every((r: { label: string | null }) => r.label));
+
+    const byPrefix = new Map(listed.rules.map((r: { prefix: string; label: string }) => [r.prefix, r.label]));
+    assert.equal(byPrefix.get("234"), "Nigeria");
+    assert.equal(byPrefix.get("91"), "India");
+    assert.equal(byPrefix.get("1876"), "Jamaica");
+  });
+
+  test("South Africa is not on it, and reaches an account that has it", async () => {
+    const listed = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
+    assert.ok(
+      !listed.rules.some((r: { prefix: string }) => r.prefix === "27"),
+      "+27 must not be blocked",
+    );
+
+    const { rules, settings } = await alice.as(async (q) => ({
+      rules: await activeRules(q, alice.accountId),
+      settings: toSettings(await getSettings(q, alice.accountId)),
+    }));
+    const verdict = decide(
+      { remoteJid: "27825550143@s.whatsapp.net", fromMe: false, isKnownContact: false },
+      rules,
+      { ...settings, armed: true },
+    );
+    assert.equal(verdict.decision, "no_match", "a South African number is untouched");
+  });
+
+  test("the starter list is still born disarmed, so it acts on nothing", async () => {
+    const me = json(await app.inject({ method: "GET", url: "/v1/me", headers: authHeader(alice) }));
+    assert.equal(me.settings.armed, false);
+
+    const { rules, settings } = await alice.as(async (q) => ({
+      rules: await activeRules(q, alice.accountId),
+      settings: toSettings(await getSettings(q, alice.accountId)),
+    }));
+    const verdict = decide(
+      { remoteJid: "2349015550111@s.whatsapp.net", fromMe: false, isKnownContact: false },
+      rules,
+      settings,
+    );
+    assert.equal(verdict.decision, "would_block");
+    assert.equal(verdict.action, "log_only");
+  });
+
+  test("a deleted starter rule stays deleted", async () => {
+    const listed = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
+    const nigeria = listed.rules.find((r: { prefix: string }) => r.prefix === "234");
+
+    await app.inject({ method: "DELETE", url: `/v1/rules/${nigeria.id}`, headers: authHeader(alice) });
+
+    // Signing up again with the same email must not resurrect it.
+    await app.inject({ method: "POST", url: "/v1/signup", payload: { email: alice.email } });
+    const after = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
+    assert.ok(!after.rules.some((r: { prefix: string }) => r.prefix === "234"));
+    assert.equal(after.rules.length, 28);
+  });
+});
+
 describe("rules", () => {
+  // Rule CRUD is clearest against an account holding only what the test put there.
+  beforeEach(() => clearRules(alice.accountId));
+
   test("a country code is stored with the name from the dial plan", async () => {
     const response = await app.inject({
       method: "POST",
@@ -197,6 +270,48 @@ describe("settings and arming", () => {
       payload: { delete_delay_seconds: 600 },
     });
     assert.equal(json(ok).settings.delete_delay_seconds, 600);
+  });
+});
+
+describe("allowlist mode over the API", () => {
+  test("the policy can be switched and comes back in every settings response", async () => {
+    const patched = JSON.parse(
+      (await app.inject({
+        method: "PATCH", url: "/v1/settings", headers: authHeader(alice),
+        payload: { default_policy: "block" },
+      })).body,
+    );
+    assert.equal(patched.settings.default_policy, "block");
+
+    const me = JSON.parse(
+      (await app.inject({ method: "GET", url: "/v1/me", headers: authHeader(alice) })).body,
+    );
+    assert.equal(me.settings.default_policy, "block");
+  });
+
+  test("switching the policy leaves every other setting alone", async () => {
+    await app.inject({
+      method: "PATCH", url: "/v1/settings", headers: authHeader(alice),
+      payload: { action: "archive", delete_delay_seconds: 300, apply_to_groups: true },
+    });
+    const after = JSON.parse(
+      (await app.inject({
+        method: "PATCH", url: "/v1/settings", headers: authHeader(alice),
+        payload: { default_policy: "block" },
+      })).body,
+    ).settings;
+    assert.equal(after.action, "archive");
+    assert.equal(after.delete_delay_seconds, 300);
+    assert.equal(after.apply_to_groups, true);
+    assert.equal(after.armed, false, "and does not arm anything by itself");
+  });
+
+  test("only allow and block are accepted", async () => {
+    const response = await app.inject({
+      method: "PATCH", url: "/v1/settings", headers: authHeader(alice),
+      payload: { default_policy: "deny" },
+    });
+    assert.equal(response.statusCode, 400);
   });
 });
 

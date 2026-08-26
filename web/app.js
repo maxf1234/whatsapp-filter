@@ -270,7 +270,9 @@ function renderDashboard() {
         <div class="stat"><b>${blocked}</b><span>removed this week</span></div>
         <div class="stat"><b>${would}</b><span>would have been</span></div>
         <div class="stat"><b>${state.rules.filter((r) => r.enabled && r.kind === "block").length}</b><span>block rules</span></div>
-        <div class="stat"><b>${state.rules.filter((r) => r.enabled && r.kind === "allow").length}</b><span>exceptions</span></div>
+        <div class="stat"><b>${state.rules.filter((r) => r.enabled && r.kind === "allow").length}</b><span>${
+          s.default_policy === "block" ? "allowed prefixes" : "exceptions"
+        }</span></div>
       </div>
     </div>
 
@@ -342,7 +344,21 @@ function renderDashboard() {
           </label>
         </div>
         <div style="flex:1 1 240px">
-          <h3>What happens on a match</h3>
+          <h3>Numbers no rule matches</h3>
+          <select id="set-policy" aria-label="Default policy">
+            <option value="allow"${s.default_policy === "allow" ? " selected" : ""}>Let through — rules are a block list</option>
+            <option value="block"${s.default_policy === "block" ? " selected" : ""}>Block — rules are an allow list</option>
+          </select>
+          ${
+            s.default_policy === "block"
+              ? `<p class="fineprint" style="margin-top:8px;color:var(--warn)">
+                   Allow-list mode. Only the prefixes in your allow rules get through;
+                   every other number on earth is caught. Saved contacts are still exempt
+                   unless you turn that off too.
+                 </p>`
+              : ""
+          }
+          <h3 style="margin-top:16px">What happens on a match</h3>
           <select id="set-action" aria-label="Action on match">
             ${[
               ["delete", "Delete the conversation"],
@@ -596,6 +612,13 @@ function bindDashboard() {
   $("#set-known").addEventListener("change", (e) => patch({ apply_to_known_contacts: e.target.checked }));
   $("#set-calls").addEventListener("change", (e) => patch({ reject_calls: e.target.checked }));
   $("#set-action").addEventListener("change", (e) => patch({ action: e.target.value }));
+  $("#set-policy").addEventListener("change", (e) => {
+    if (e.target.value === "block" && !confirmAllowlist()) {
+      e.target.value = "allow";
+      return;
+    }
+    return patch({ default_policy: e.target.value });
+  });
   $("#set-delay").addEventListener("change", (e) =>
     patch({ delete_delay_seconds: Number(e.target.value) }),
   );
@@ -616,15 +639,41 @@ function bindDashboard() {
  */
 function confirmArming() {
   const s = state.me.settings;
-  const count = state.rules.filter((r) => r.enabled && r.kind === "block").length;
+  const blocks = state.rules.filter((r) => r.enabled && r.kind === "block").length;
+  const allows = state.rules.filter((r) => r.enabled && r.kind === "allow").length;
   const what =
     s.action === "delete" || s.action === "block_and_delete"
       ? "Matching conversations will be DELETED from your phone. WhatsApp has no undo for this."
       : s.action === "archive"
         ? "Matching conversations will be archived and muted. This is reversible."
         : "Nothing will be changed — the action is still set to log only.";
+  // Under an allowlist the count that matters is what gets through, not what is
+  // caught, and "4 block rules are active" would badly understate the reach.
+  const scope =
+    s.default_policy === "block"
+      ? `ALLOW-LIST MODE: only ${allows} prefix${allows === 1 ? " gets" : "es get"} through. ` +
+        `Every other number is caught.`
+      : `${blocks} block rule${blocks === 1 ? "" : "s"} are active.`;
+  return confirm(`Arm the filter?\n\n${scope}\n${what}`);
+}
+
+/**
+ * Switching to an allowlist widens the filter from "these prefixes" to
+ * "everything on earth except these", which is the largest single change of
+ * reach in the product. It gets its own confirmation, before the switch, naming
+ * what will still get through.
+ */
+function confirmAllowlist() {
+  const allowed = state.rules.filter((r) => r.enabled && r.kind === "allow");
+  const list = allowed.length
+    ? allowed.map((r) => `+${r.prefix}${r.label ? ` (${r.label})` : ""}`).join(", ")
+    : "NOTHING — you have no allow rules yet";
   return confirm(
-    `Arm the filter?\n\n${count} block rule${count === 1 ? "" : "s"} are active.\n${what}`,
+    "Switch to allow-list mode?\n\n" +
+      "Every number that is not on your allow list will be caught, including your " +
+      "own country unless it is listed.\n\n" +
+      `Currently allowed: ${list}\n\n` +
+      "Saved contacts stay exempt unless you turn that off separately.",
   );
 }
 

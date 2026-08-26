@@ -10,7 +10,7 @@
 
 import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { authHeader, buildTestApp, closeAll, createSubject, resetDatabase } from "./helpers.ts";
+import { authHeader, buildTestApp, clearRules, closeAll, createSubject, resetDatabase } from "./helpers.ts";
 import type { Subject } from "./helpers.ts";
 import { activeRules } from "../src/domain/rules.ts";
 import { getSettings, toSettings, updateSettings } from "../src/domain/accounts.ts";
@@ -37,6 +37,8 @@ before(async () => {
 beforeEach(async () => {
   await resetDatabase();
   alice = await createSubject();
+  // This file asserts on an exact rule set, so it starts from empty.
+  await clearRules(alice.accountId);
 
   // Built through the API, exactly as the dashboard would.
   await app.inject({
@@ -133,8 +135,38 @@ describe("rules stored through the API drive the matcher", () => {
     assert.equal(decideCall(jid("15551230000"), rules, settings).reject, false);
   });
 
+  test("allowlist mode, built through the API, catches everything but the allowed prefix", async () => {
+    // Exactly the "block all except South Africa" shape, end to end.
+    const solo = await createSubject();
+    await clearRules(solo.accountId);
+    await app.inject({
+      method: "POST", url: "/v1/rules", headers: authHeader(solo),
+      payload: { prefix: "27", kind: "allow" },
+    });
+    await app.inject({
+      method: "PATCH", url: "/v1/settings", headers: authHeader(solo),
+      payload: { default_policy: "block", armed: true },
+    });
+
+    const { rules, settings } = await solo.as(async (q) => ({
+      rules: await activeRules(q, solo.accountId),
+      settings: toSettings(await getSettings(q, solo.accountId)),
+    }));
+
+    assert.equal(settings.defaultPolicy, "block");
+    assert.equal(decide(arriving("27825550143"), rules, settings).decision, "allowed");
+    for (const number of ["19175550123", "2349015550111", "919876543210", "4915555550123"]) {
+      assert.equal(
+        decide(arriving(number), rules, settings).decision,
+        "blocked",
+        `+${number} should be caught`,
+      );
+    }
+  });
+
   test("one account's rules never reach another's decisions", async () => {
     const mallory = await createSubject();
+    await clearRules(mallory.accountId);
     const theirs = await mallory.as(async (q) => ({
       rules: await activeRules(q, mallory.accountId),
       settings: toSettings(await getSettings(q, mallory.accountId)),

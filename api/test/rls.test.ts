@@ -9,7 +9,7 @@
 import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { asPrincipal, asService, many, one } from "../src/lib/db.ts";
-import { closeAll, createSubject, linkSession, resetDatabase } from "./helpers.ts";
+import { clearRules, closeAll, createSubject, linkSession, resetDatabase } from "./helpers.ts";
 import type { Subject } from "./helpers.ts";
 import { createRule } from "../src/domain/rules.ts";
 
@@ -24,6 +24,9 @@ beforeEach(async () => {
   await resetDatabase();
   alice = await createSubject();
   mallory = await createSubject();
+  // These assert on exact row counts, so the starter list is in the way.
+  await clearRules(alice.accountId);
+  await clearRules(mallory.accountId);
 });
 
 after(closeAll);

@@ -10,6 +10,7 @@ arriving.
 - [Status](#status)
 - [Quick start](#quick-start)
 - [How rules work](#how-rules-work)
+- [What a new account starts with](#what-a-new-account-starts-with)
 - [The safety model](#the-safety-model)
 - [What the filter sees](#what-the-filter-sees)
 - [Actions](#actions)
@@ -75,10 +76,10 @@ one that stops it happening twice.
 
 ## Status
 
-**Everything except the WhatsApp socket is built and tested.** 84 tests run
-against a live Postgres 16, covering tenant isolation, the matcher, the arming
-gate, the pairing flow, credential encryption, the held-action queue and
-retention. The API, the dashboard and the database have been driven end to end,
+**Everything except the WhatsApp socket is built and tested.** 105 tests run
+against a live Postgres 16, covering tenant isolation, the matcher, both
+policies, the arming gate, the pairing flow, credential encryption, the
+held-action queue and retention. The API, the dashboard and the database have been driven end to end,
 including in a real browser at desktop and phone widths, light and dark.
 
 **The Baileys socket has never been connected to a real WhatsApp account.**
@@ -179,6 +180,54 @@ country code — because a bound that is too tight rejects a real sender rather
 than a fake one. Anything that fails is returned as "no usable number" rather
 than as a best guess; a wrong normalisation here would delete the wrong
 conversation.
+
+## What a new account starts with
+
+Signup copies `starter_rules` (`db/migrations/0006_starter_rules.sql`) into the
+account as 29 block rules: Nigeria, Ghana, Côte d'Ivoire, Senegal, Benin, Togo,
+Cameroon, Kenya, Egypt, Morocco, India, Pakistan, Bangladesh, Indonesia, the
+Philippines, Vietnam, Malaysia, Cambodia, Myanmar, China, Russia, Ukraine,
+Turkey, the UAE, Iraq, Jamaica and the Dominican Republic. **South Africa (+27)
+is deliberately absent** and reaches subscribers normally — a `do` block in the
+migration fails the build if it is ever added, rather than shipping it quietly.
+
+It is a **copy**, not a reference. The moment a subscriber deletes one it stays
+deleted; a shared list would resurrect it, and a filter that puts back a rule you
+removed is worse than one that shipped empty. Editing the migration changes what
+*new* accounts get and never reaches back into an existing one.
+
+Getting the list wrong is cheap, because accounts are still born disarmed: a
+country a subscriber wanted shows up as `would_block` rows naming it, and they
+delete the rule before arming.
+
+The full list with prefixes: [docs/country-codes.md](docs/country-codes.md).
+
+## Block list or allow list
+
+`settings.default_policy` decides what happens to a number **no rule matched**.
+
+- `allow` (**the default**) — rules are a **block list**. Named prefixes are
+  caught, everything else gets through.
+- `block` — rules are an **allow list**. Allow rules name what may through and
+  *every other number on earth* is caught. This is the only way to express
+  "everything except these": a block list enumerating every country is wrong the
+  moment a prefix nobody thought of arrives, which is the whole case an allow
+  list exists for.
+
+An allow rule wins outright under either policy, so it is the same rule with the
+same meaning in both — the allow-list entry, or the exception carved out of a
+longer block rule.
+
+Allow-list mode is a large change in reach and is treated as one: the dashboard
+confirms before switching, names what is currently allowed, and the arming
+confirmation reports how many prefixes get through rather than how many rules
+are active. Saved contacts stay exempt, which is the safety valve that makes it
+survivable at all.
+
+One deliberate hole: a `@lid` contact has no readable number, so allow-list mode
+logs it as `unresolved_jid` rather than catching it. The strict reading would be
+"not provably allowed, so catch it", but that means deleting conversations
+nobody can write a rule for.
 
 ## The safety model
 
@@ -326,6 +375,7 @@ queue is a table: [docs/architecture.md](docs/architecture.md).
 | `rules` | `(account_id, prefix)` unique, kind, label, enabled. |
 | `filter_events` | The activity log. Number, matched prefix, decision, action taken. Never content. |
 | `pending_actions` | Held destructive actions. `(session_id, remote_jid)` unique. |
+| `starter_rules` | The block list copied onto each new account at signup. |
 | `dial_prefixes` | Reference labels for the picker. 231 countries, 412 NANP area codes. |
 
 Session status moves `unlinked → pairing → linked`, and out to `logged_out`
@@ -386,7 +436,7 @@ Validation failures add an `issues` array.
 
 | | |
 |---|---|
-| `POST /v1/signup` | `{email}` → `{account_id, email, token, auth_mode}`. Idempotent: signing up twice returns the same account. `token` is null when `AUTH_MODE=external`. |
+| `POST /v1/signup` | `{email}` → `{account_id, email, token, auth_mode}`. Creates the account, its settings and the starter block list. Idempotent: signing up twice returns the same account and does not re-seed rules the subscriber deleted. `token` is null when `AUTH_MODE=external`. |
 | `POST /v1/sessions` | `{email}` → `{token, account_id}`. Dev mode only; 403 otherwise. |
 | `GET /v1/me` | Everything the dashboard needs for its first frame: account, role, settings, session summary. |
 
@@ -414,7 +464,7 @@ Validation failures add an `issues` array.
 | | |
 |---|---|
 | `GET /v1/settings` | `{settings}`. |
-| `PATCH /v1/settings` | Any of `action`, `armed`, `delete_delay_seconds` (0–86400), `apply_to_known_contacts`, `apply_to_groups`, `reject_calls`. Returns the whole settings object. |
+| `PATCH /v1/settings` | Any of `action`, `armed`, `default_policy` (`allow`\|`block`), `delete_delay_seconds` (0–86400), `apply_to_known_contacts`, `apply_to_groups`, `reject_calls`. Returns the whole settings object. |
 
 ### Activity
 
@@ -514,7 +564,7 @@ way that looks like a code failure and is not.
 | File | Covers |
 |---|---|
 | `phone.test.ts` | JID parsing, normalisation, longest-prefix matching, order independence |
-| `decide.test.ts` | The verdict, including the arming gate as a property over every settings combination |
+| `decide.test.ts` | The verdict, both policies, and the arming gate as a property over every settings combination |
 | `rls.test.ts` | Tenant isolation, credential unreachability, what a subscriber may and may not write |
 | `api.test.ts` | Every route, including the pairing flow and expiry |
 | `worker.test.ts` | Credential encryption and round-tripping, the auth-state store, the held-action queue, retention |
@@ -543,6 +593,10 @@ with a `would_block` row saying so.
 **`pairing failed: …` in `last_disconnect_reason`.** WhatsApp refused to issue a
 code. Usually a wrong number or rate limiting; waiting and retrying is the only
 remedy.
+
+**A country you expected to be blocked is not, on a fresh account.** Only the 29
+starter prefixes are seeded; add the rest yourself. And check it is not one a
+subscriber deleted — deletions are permanent by design.
 
 **A steady stream of `unresolved_jid`.** Those contacts are identified by `@lid`
 handles with no number in them, so no rule can be evaluated. The filter is

@@ -36,6 +36,7 @@ const patchBody = z.object({
 const settingsBody = z.object({
   action: z.enum(["log_only", "archive", "delete", "block_and_delete"]).optional(),
   armed: z.boolean().optional(),
+  default_policy: z.enum(["allow", "block"]).optional(),
   delete_delay_seconds: z.number().int().min(0).max(86400).optional(),
   apply_to_known_contacts: z.boolean().optional(),
   apply_to_groups: z.boolean().optional(),
@@ -109,6 +110,7 @@ export async function ruleRoutes(app: FastifyInstance, opts: { manager?: Session
       updateSettings(q, who.accountId, {
         action: body.action,
         armed: body.armed,
+        defaultPolicy: body.default_policy,
         deleteDelaySeconds: body.delete_delay_seconds,
         applyToKnownContacts: body.apply_to_known_contacts,
         applyToGroups: body.apply_to_groups,

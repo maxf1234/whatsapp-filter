@@ -35,28 +35,37 @@ break anything.
 
 ---
 
-## Frequently blocked
+## What a new account starts with
 
-Not a judgement about any country — just the prefixes people setting up a
-filter like this reach for first, because they are the ones that show up most
-in unsolicited WhatsApp contact. Pick from these or ignore them entirely.
+Every account is seeded with these 29 prefixes as **block** rules, from
+`db/migrations/0006_starter_rules.sql`. They are yours from that moment —
+remove any you disagree with and it stays removed.
+
+**South Africa (+27) is deliberately not on the list** and reaches you normally.
 
 | Country | Prefix | | Country | Prefix |
 |---|---|---|---|---|
 | Nigeria | `234` | | Indonesia | `62` |
-| India | `91` | | Philippines | `63` |
-| Pakistan | `92` | | Vietnam | `84` |
-| Bangladesh | `880` | | Malaysia | `60` |
-| Ghana | `233` | | Cambodia | `855` |
-| Kenya | `254` | | Myanmar | `95` |
-| South Africa | `27` | | China | `86` |
-| Egypt | `20` | | Russia | `7` |
-| Morocco | `212` | | Ukraine | `380` |
-| Côte d'Ivoire | `225` | | Turkey | `90` |
-| Cameroon | `237` | | UAE | `971` |
-| Senegal | `221` | | Iraq | `964` |
-| Benin | `229` | | Jamaica | `1876` |
-| Togo | `228` | | Dominican Republic | `1809` `1829` `1849` |
+| Ghana | `233` | | Philippines | `63` |
+| Côte d'Ivoire | `225` | | Vietnam | `84` |
+| Senegal | `221` | | Malaysia | `60` |
+| Benin | `229` | | Cambodia | `855` |
+| Togo | `228` | | Myanmar | `95` |
+| Cameroon | `237` | | China | `86` |
+| Kenya | `254` | | Russia / Kazakhstan | `7` |
+| Egypt | `20` | | Ukraine | `380` |
+| Morocco | `212` | | Turkey | `90` |
+| India | `91` | | United Arab Emirates | `971` |
+| Pakistan | `92` | | Iraq | `964` |
+| Bangladesh | `880` | | Jamaica | `1876` |
+| | | | Dominican Republic | `1809` `1829` `1849` |
+
+Nothing happens to any of them until the account is armed. Until then they show
+up in the activity log as `would_block`, which is how you check the list is
+right before it can do anything.
+
+To change what *new* accounts get, edit `starter_rules` in that migration.
+Existing accounts keep the copy they were given.
 
 ---
 
