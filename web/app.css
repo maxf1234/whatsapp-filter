@@ -1,0 +1,234 @@
+/* One stylesheet, no build step. The service serves this next to the API, so a
+   deploy is one artefact and there is no CORS to configure. */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #dfe3e8;
+  --ink: #10151c;
+  --ink-2: #55606e;
+  --ink-3: #7c8797;
+  --brand: #0e9f6e;
+  --brand-ink: #06603f;
+  --danger: #c0392b;
+  --danger-bg: #fdecea;
+  --warn: #9a6700;
+  --warn-bg: #fff8e5;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 21, 28, 0.06), 0 8px 24px rgba(16, 21, 28, 0.06);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1220;
+    --surface: #131b2a;
+    --surface-2: #1b2434;
+    --border: #26324a;
+    --ink: #eef2f8;
+    --ink-2: #a9b4c6;
+    --ink-3: #7a8699;
+    --brand: #2bc48a;
+    --brand-ink: #9ff0cd;
+    --danger: #ff6b5c;
+    --danger-bg: #3a1c1a;
+    --warn: #f2c14e;
+    --warn-bg: #33290f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { line-height: 1.2; margin: 0 0 0.4em; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); }
+h2 { font-size: 1.35rem; }
+h3 { font-size: 1rem; }
+p { margin: 0 0 1em; color: var(--ink-2); }
+a { color: var(--brand-ink); }
+
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+.narrow { max-width: 560px; }
+
+/* ---------------------------------------------------------------- landing */
+
+.hero { padding: 72px 0 48px; }
+.hero h1 { max-width: 18ch; }
+.hero .lede { font-size: 1.15rem; max-width: 52ch; }
+
+.signup { display: flex; gap: 8px; flex-wrap: wrap; margin: 28px 0 10px; }
+.signup input { flex: 1 1 260px; }
+
+.fineprint { font-size: 0.85rem; color: var(--ink-3); max-width: 52ch; }
+
+.steps { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); padding: 8px 0 64px; }
+.step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.step .n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-size: 0.85rem; font-weight: 700; margin-bottom: 10px;
+}
+.step p { margin: 0; font-size: 0.94rem; }
+
+/* ---------------------------------------------------------------- shell */
+
+header.bar {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky; top: 0; z-index: 5;
+}
+header.bar .wrap { display: flex; align-items: center; gap: 10px; height: 60px; }
+header.bar button { white-space: nowrap; }
+.brand { font-weight: 700; letter-spacing: -0.02em; margin-right: auto; }
+.brand span { color: var(--brand); }
+
+main { padding: 28px 0 80px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow);
+}
+.card > h2 { display: flex; align-items: center; gap: 10px; }
+.card .sub { font-size: 0.9rem; color: var(--ink-3); margin: -0.2em 0 1em; }
+
+/* ---------------------------------------------------------------- controls */
+
+input[type="text"], input[type="email"], input[type="tel"], input[type="number"], select {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px; min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--brand); outline-offset: 2px;
+}
+
+button {
+  font: inherit; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent; border-radius: 9px; padding: 11px 16px;
+  background: var(--brand); color: #fff;
+}
+button:hover { filter: brightness(1.06); }
+button:disabled { opacity: 0.55; cursor: not-allowed; filter: none; }
+button.ghost { background: transparent; color: var(--ink); border-color: var(--border); }
+button.danger { background: var(--danger); }
+button.small { padding: 6px 10px; font-size: 0.85rem; }
+button.link { background: none; border: none; color: var(--ink-3); padding: 4px; text-decoration: underline; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.spread { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+
+label.check { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; cursor: pointer; }
+label.check input { margin-top: 4px; }
+label.check .t { font-size: 0.94rem; }
+label.check .d { font-size: 0.84rem; color: var(--ink-3); }
+
+/* ---------------------------------------------------------------- status */
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2);
+}
+.pill.live { background: rgba(14, 159, 110, 0.14); color: var(--brand-ink); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.off  { background: var(--danger-bg); color: var(--danger); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+.banner {
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 18px;
+  font-size: 0.94rem; border: 1px solid transparent;
+}
+.banner.warn { background: var(--warn-bg); color: var(--warn); border-color: rgba(154, 103, 0, 0.3); }
+.banner.err  { background: var(--danger-bg); color: var(--danger); border-color: rgba(192, 57, 43, 0.3); }
+.banner.ok   { background: rgba(14, 159, 110, 0.12); color: var(--brand-ink); }
+
+.stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.stat { background: var(--surface-2); border-radius: 10px; padding: 14px; }
+.stat b { display: block; font-size: 1.6rem; letter-spacing: -0.03em; }
+.stat span { font-size: 0.82rem; color: var(--ink-3); }
+
+/* ---------------------------------------------------------------- pairing */
+
+.code {
+  font-family: var(--mono); font-size: clamp(1.8rem, 8vw, 2.8rem); font-weight: 700;
+  letter-spacing: 0.22em; text-align: center;
+  background: var(--surface-2); border-radius: var(--radius); padding: 22px 12px; margin: 4px 0 14px;
+}
+.code.pending { font-size: 1rem; letter-spacing: normal; color: var(--ink-3); font-family: inherit; font-weight: 500; }
+ol.howto { margin: 0 0 4px; padding-left: 20px; color: var(--ink-2); font-size: 0.94rem; }
+ol.howto li { margin-bottom: 4px; }
+
+/* ---------------------------------------------------------------- lists */
+
+ul.rules, ul.events, ul.pending { list-style: none; margin: 0; padding: 0; }
+ul.rules li, ul.pending li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 0; border-bottom: 1px solid var(--border);
+}
+ul.rules li:last-child, ul.pending li:last-child { border-bottom: none; }
+.prefix { font-family: var(--mono); font-weight: 700; min-width: 6.5ch; }
+.rule-name { flex: 1; min-width: 0; }
+.rule-name small { display: block; color: var(--ink-3); font-size: 0.82rem; }
+.tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.tag.block { background: var(--danger-bg); color: var(--danger); }
+.tag.allow { background: rgba(14, 159, 110, 0.14); color: var(--brand-ink); }
+.tag.off { background: var(--surface-2); color: var(--ink-3); }
+
+ul.events li {
+  display: grid; grid-template-columns: 104px 1fr auto; gap: 12px; align-items: baseline;
+  padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
+}
+ul.events li:last-child { border-bottom: none; }
+ul.events time { color: var(--ink-3); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+ul.events .who { font-family: var(--mono); }
+.empty { color: var(--ink-3); font-size: 0.92rem; padding: 14px 0; }
+
+/* ---------------------------------------------------------------- picker */
+
+dialog {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  color: var(--ink); padding: 0; width: min(560px, 94vw); box-shadow: var(--shadow);
+}
+dialog::backdrop { background: rgba(4, 8, 16, 0.55); }
+dialog .head { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+dialog .body { padding: 12px 18px; max-height: 52vh; overflow-y: auto; }
+dialog .foot { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+.tabs { display: flex; gap: 6px; margin-top: 12px; }
+.tabs button { background: var(--surface-2); color: var(--ink-2); padding: 7px 12px; font-size: 0.88rem; }
+.tabs button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+.pick { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.pick:last-child { border-bottom: none; }
+.pick .region { margin-left: auto; font-size: 0.78rem; color: var(--ink-3); }
+
+@media (max-width: 640px) {
+  .hero { padding: 48px 0 32px; }
+  .card { padding: 16px; }
+  /* Brand, status pill and sign-out share one 390px row and none of them may
+     wrap, so each gives up a little rather than the row growing. */
+  header.bar .wrap { gap: 8px; }
+  .brand { font-size: 0.95rem; }
+  .pill { font-size: 0.68rem; padding: 3px 8px; }
+  header.bar button { padding: 6px 10px; font-size: 0.82rem; }
+  /* The name takes the second line so the prefix, its tag and both buttons
+     still fit on one row rather than each wrapping in turn. */
+  ul.rules li { flex-wrap: wrap; gap: 8px; }
+  ul.rules li .rule-name { flex-basis: 100%; order: 3; }
+  ul.rules li button.small { padding: 5px 9px; font-size: 0.8rem; }
+  .prefix { min-width: 0; }
+  ul.events li { grid-template-columns: 1fr auto; }
+  ul.events time { grid-column: 1 / -1; }
+}
+
+.hide { display: none !important; }
