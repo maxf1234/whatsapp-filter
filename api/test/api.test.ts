@@ -33,7 +33,18 @@ after(async () => {
 const json = (response: { body: string }) => JSON.parse(response.body);
 
 /** Every new account is seeded with these; see db/migrations/0006_starter_rules.sql. */
-const STARTER_RULES = 29;
+const STARTER_RULES = 23;
+
+/** Countries that must reach a subscriber untouched on a fresh account. */
+const MUST_REACH: [string, string][] = [
+  ["27825550143", "South Africa"],
+  ["201005550123", "Egypt"],
+  ["971505550123", "United Arab Emirates"],
+  ["79105550123", "Russia"],
+  ["6281155501234", "Indonesia"],
+  ["8613800138000", "China"],
+  ["380675550123", "Ukraine"],
+];
 
 describe("signup", () => {
   test("creates an account, settings and a usable token in one call", async () => {
@@ -83,7 +94,7 @@ describe("signup", () => {
 describe("the starter block list", () => {
   test("a new account arrives with the list already loaded and labelled", async () => {
     const listed = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
-    assert.equal(listed.rules.length, 29);
+    assert.equal(listed.rules.length, STARTER_RULES);
     assert.ok(listed.rules.every((r: { kind: string }) => r.kind === "block"));
     assert.ok(listed.rules.every((r: { label: string | null }) => r.label));
 
@@ -93,23 +104,51 @@ describe("the starter block list", () => {
     assert.equal(byPrefix.get("1876"), "Jamaica");
   });
 
-  test("South Africa is not on it, and reaches an account that has it", async () => {
+  test("the countries meant to stay reachable are not on it", async () => {
     const listed = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
-    assert.ok(
-      !listed.rules.some((r: { prefix: string }) => r.prefix === "27"),
-      "+27 must not be blocked",
-    );
+    const blocked = new Set(listed.rules.map((r: { prefix: string }) => r.prefix));
+    for (const prefix of ["27", "20", "971", "7", "62", "86", "380"]) {
+      assert.ok(!blocked.has(prefix), `+${prefix} must not be blocked by default`);
+    }
+  });
 
+  test("and they actually reach an armed account", async () => {
+    // The rule list is one thing; what the matcher does with it is the claim
+    // that matters. A missing block rule is not the same as a number getting
+    // through, since a shorter prefix elsewhere in the list could still catch it.
     const { rules, settings } = await alice.as(async (q) => ({
       rules: await activeRules(q, alice.accountId),
       settings: toSettings(await getSettings(q, alice.accountId)),
     }));
-    const verdict = decide(
-      { remoteJid: "27825550143@s.whatsapp.net", fromMe: false, isKnownContact: false },
-      rules,
-      { ...settings, armed: true },
-    );
-    assert.equal(verdict.decision, "no_match", "a South African number is untouched");
+    for (const [number, country] of MUST_REACH) {
+      const verdict = decide(
+        { remoteJid: `${number}@s.whatsapp.net`, fromMe: false, isKnownContact: false },
+        rules,
+        { ...settings, armed: true },
+      );
+      assert.equal(verdict.decision, "no_match", `${country} (+${number}) must reach you`);
+      assert.equal(verdict.action, "log_only");
+    }
+  });
+
+  test("the countries still on the list are still caught", async () => {
+    const { rules, settings } = await alice.as(async (q) => ({
+      rules: await activeRules(q, alice.accountId),
+      settings: toSettings(await getSettings(q, alice.accountId)),
+    }));
+    for (const [number, country] of [
+      ["2349015550111", "Nigeria"],
+      ["919876543210", "India"],
+      ["8801712345678", "Bangladesh"],
+      ["18765550123", "Jamaica"],
+    ] as [string, string][]) {
+      const verdict = decide(
+        { remoteJid: `${number}@s.whatsapp.net`, fromMe: false, isKnownContact: false },
+        rules,
+        { ...settings, armed: true },
+      );
+      assert.equal(verdict.decision, "blocked", `${country} should still be caught`);
+    }
   });
 
   test("the starter list is still born disarmed, so it acts on nothing", async () => {
@@ -139,7 +178,7 @@ describe("the starter block list", () => {
     await app.inject({ method: "POST", url: "/v1/signup", payload: { email: alice.email } });
     const after = json(await app.inject({ method: "GET", url: "/v1/rules", headers: authHeader(alice) }));
     assert.ok(!after.rules.some((r: { prefix: string }) => r.prefix === "234"));
-    assert.equal(after.rules.length, 28);
+    assert.equal(after.rules.length, STARTER_RULES - 1);
   });
 });
 

@@ -76,7 +76,7 @@ one that stops it happening twice.
 
 ## Status
 
-**Everything except the WhatsApp socket is built and tested.** 105 tests run
+**Everything except the WhatsApp socket is built and tested.** 107 tests run
 against a live Postgres 16, covering tenant isolation, the matcher, both
 policies, the arming gate, the pairing flow, credential encryption, the
 held-action queue and retention. The API, the dashboard and the database have been driven end to end,
@@ -183,24 +183,30 @@ conversation.
 
 ## What a new account starts with
 
-Signup copies `starter_rules` (`db/migrations/0006_starter_rules.sql`) into the
-account as 29 block rules: Nigeria, Ghana, Côte d'Ivoire, Senegal, Benin, Togo,
-Cameroon, Kenya, Egypt, Morocco, India, Pakistan, Bangladesh, Indonesia, the
-Philippines, Vietnam, Malaysia, Cambodia, Myanmar, China, Russia, Ukraine,
-Turkey, the UAE, Iraq, Jamaica and the Dominican Republic. **South Africa (+27)
-is deliberately absent** and reaches subscribers normally — a `do` block in the
-migration fails the build if it is ever added, rather than shipping it quietly.
+Signup copies `starter_rules` into the account as 23 block rules: Nigeria,
+Ghana, Côte d'Ivoire, Senegal, Benin, Togo, Cameroon, Kenya, Morocco, India,
+Pakistan, Bangladesh, the Philippines, Vietnam, Malaysia, Cambodia, Myanmar,
+Turkey, Iraq, Jamaica and the Dominican Republic.
+
+**South Africa, Egypt, the UAE, Russia, Indonesia, China and Ukraine are
+deliberately absent** and reach subscribers normally. A guard in
+`db/migrations/0007_starter_rules_trim.sql` fails the migration if any of them
+is ever added back, rather than shipping it quietly — the list has changed
+twice, and a careless edit to an earlier migration would otherwise go unnoticed.
 
 It is a **copy**, not a reference. The moment a subscriber deletes one it stays
 deleted; a shared list would resurrect it, and a filter that puts back a rule you
-removed is worse than one that shipped empty. Editing the migration changes what
-*new* accounts get and never reaches back into an existing one.
+removed is worse than one that shipped empty. Adding a migration that changes
+`starter_rules` changes what *new* accounts get and never reaches back into an
+existing one — applying a change to accounts that already exist is a deliberate
+`delete from rules where prefix in (…)`.
 
 Getting the list wrong is cheap, because accounts are still born disarmed: a
 country a subscriber wanted shows up as `would_block` rows naming it, and they
 delete the rule before arming.
 
-The full list with prefixes: [docs/country-codes.md](docs/country-codes.md).
+The full list with prefixes, and the countries left reachable:
+[docs/country-codes.md](docs/country-codes.md).
 
 ## Block list or allow list
 
@@ -375,7 +381,7 @@ queue is a table: [docs/architecture.md](docs/architecture.md).
 | `rules` | `(account_id, prefix)` unique, kind, label, enabled. |
 | `filter_events` | The activity log. Number, matched prefix, decision, action taken. Never content. |
 | `pending_actions` | Held destructive actions. `(session_id, remote_jid)` unique. |
-| `starter_rules` | The block list copied onto each new account at signup. |
+| `starter_rules` | The 23-prefix block list copied onto each new account at signup. |
 | `dial_prefixes` | Reference labels for the picker. 231 countries, 412 NANP area codes. |
 
 Session status moves `unlinked → pairing → linked`, and out to `logged_out`
@@ -594,8 +600,10 @@ with a `would_block` row saying so.
 code. Usually a wrong number or rate limiting; waiting and retrying is the only
 remedy.
 
-**A country you expected to be blocked is not, on a fresh account.** Only the 29
-starter prefixes are seeded; add the rest yourself. And check it is not one a
+**A country you expected to be blocked is not, on a fresh account.** Only the 23
+starter prefixes are seeded, and seven countries are deliberately left reachable
+— see [What a new account starts with](#what-a-new-account-starts-with). Add the
+rest yourself. And check it is not one a
 subscriber deleted — deletions are permanent by design.
 
 **A steady stream of `unresolved_jid`.** Those contacts are identified by `@lid`

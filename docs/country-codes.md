@@ -37,35 +37,49 @@ break anything.
 
 ## What a new account starts with
 
-Every account is seeded with these 29 prefixes as **block** rules, from
-`db/migrations/0006_starter_rules.sql`. They are yours from that moment —
-remove any you disagree with and it stays removed.
-
-**South Africa (+27) is deliberately not on the list** and reaches you normally.
+Every account is seeded with these 23 prefixes as **block** rules, from
+`db/migrations/0006_starter_rules.sql` and `0007_starter_rules_trim.sql`. They
+are yours from that moment — remove any you disagree with and it stays removed.
 
 | Country | Prefix | | Country | Prefix |
 |---|---|---|---|---|
-| Nigeria | `234` | | Indonesia | `62` |
-| Ghana | `233` | | Philippines | `63` |
-| Côte d'Ivoire | `225` | | Vietnam | `84` |
-| Senegal | `221` | | Malaysia | `60` |
-| Benin | `229` | | Cambodia | `855` |
-| Togo | `228` | | Myanmar | `95` |
-| Cameroon | `237` | | China | `86` |
-| Kenya | `254` | | Russia / Kazakhstan | `7` |
-| Egypt | `20` | | Ukraine | `380` |
-| Morocco | `212` | | Turkey | `90` |
-| India | `91` | | United Arab Emirates | `971` |
-| Pakistan | `92` | | Iraq | `964` |
-| Bangladesh | `880` | | Jamaica | `1876` |
-| | | | Dominican Republic | `1809` `1829` `1849` |
+| Nigeria | `234` | | Philippines | `63` |
+| Ghana | `233` | | Vietnam | `84` |
+| Côte d'Ivoire | `225` | | Malaysia | `60` |
+| Senegal | `221` | | Cambodia | `855` |
+| Benin | `229` | | Myanmar | `95` |
+| Togo | `228` | | Turkey | `90` |
+| Cameroon | `237` | | Iraq | `964` |
+| Kenya | `254` | | Jamaica | `1876` |
+| Morocco | `212` | | Dominican Republic | `1809` `1829` `1849` |
+| India | `91` | | | |
+| Pakistan | `92` | | | |
+| Bangladesh | `880` | | | |
 
-Nothing happens to any of them until the account is armed. Until then they show
-up in the activity log as `would_block`, which is how you check the list is
-right before it can do anything.
+### Deliberately not blocked
 
-To change what *new* accounts get, edit `starter_rules` in that migration.
-Existing accounts keep the copy they were given.
+These reach subscribers normally. A guard in `0007` fails the migration if any
+of them is ever put back on the starter list, rather than shipping it quietly —
+add to that guard whenever a country comes off the block list.
+
+| Country | Prefix | | Country | Prefix |
+|---|---|---|---|---|
+| South Africa | `27` | | Indonesia | `62` |
+| Egypt | `20` | | China | `86` |
+| United Arab Emirates | `971` | | Ukraine | `380` |
+| Russia / Kazakhstan | `7` | | | |
+
+Nothing happens to any blocked country until the account is armed. Until then
+they show up in the activity log as `would_block`, which is how you check the
+list is right before it can do anything.
+
+To change what *new* accounts get, add a migration adjusting `starter_rules`.
+Existing accounts keep the copy they were given; applying a change to them is a
+deliberate act:
+
+```sql
+delete from rules where prefix in ('20','971','7','62','86','380');
+```
 
 ---
 
